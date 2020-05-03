@@ -1,10 +1,4 @@
-
-***Technische Universität Darmstadt, Fraunhofer Institut für Sichere Informationstechnologie***
-
 ***Author: Patrick Singh***
-
-***Supervisor: Hervais-Clemence Simo Fhom, Prof. Michael Waidner***
-
 
 # BEPIS - Description:
 BEPIS is an experimental approach on realizing Epsilon-Differential-Privacy as data anonymization technique for
