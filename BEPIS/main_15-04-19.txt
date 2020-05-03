@@ -1,0 +1,172 @@
+from py2neo import Graph  # https://py2neo.org/v4/
+from random import randint, uniform
+import names
+
+'''
+Fraunhofer Institut für Sichere Informationstechnologie
+Author: Patrick Singh
+Betreuer: Hervais-Clemence Simo Fhom, Prof. Michael Waidner
+'''
+'''
+BEPIS - Description:
+BEPIS is an experimental approach on realizing Epsilon-Differential-Privacy as data anonymization technique for
+graph database, e.g. Neo4j. It provides a console interface to a running Neo4j-Graph instance and ways to laod data
+into the system, as .csv files. Furthermore, it provides ways to query the database and translates these queries to queries
+enforcing epsilon-differential-privacy. As being a prove-of-concept implementation as part of my bachelor thesis,
+it only provides first-steps into this topic and is therefore just providing a translation for aggregation queries, like counting queries.
+We are implementing the sensitivity-based mechanism with elastic sensitivity as an upper boundary to local sensitivity.
+Concretely, we are applying a smoothing function on top of local sensitivity to ensure a certain distance to the true database.
+'''
+'''
+Sending queries to the Neo4j Browser to visualize them is currently not possible:
+https://community.neo4j.com/t/py2neo-can-we-see-in-a-client-navigator-the-query-send-by-py2neo/1674/3
+https://github.com/neo4j/neo4j-browser/issues/728
+
+-> Queries must be inserted into the Neo4j Browser by hand to visualize them properly.
+
+Loadable CSV-Files: UserData.csv (100 entries), UserData2.csv (10.000 entries)
+'''
+
+
+class EDPNeo4j:
+    # Neo4j Graph Credentials
+    uri = "bolt://localhost:11011"  # Neo4j Browser - :server status
+    user = "neo4j"
+    password = "snsnsn11"
+
+    # Privacy Budget, Epsilon, sensitivity, and database-distance k
+    pb = 10
+    eps = 0.1
+    s = 1  # Depending on the queries inherent sensitivity
+    k = 1  # standardized to local sensitivity
+
+    try:
+        g = Graph(uri=uri, user=user, password=password)
+    except ConnectionError:
+        print("Check if a (local) instance of Neo4j is up and running, "
+              "as well as if the graph address (uri), user and password match")
+
+    # clear the graph
+    g.delete_all()
+
+    # Add / uncomment the following line in neo4j.conf: dbms.directories.import=import
+    # Insert csv files: (create import folder if missing)
+    # in windows: C:\Users\username\.Neo4jDesktop\neo4jDatabases\database-xxxx-xxxx\installation-x.x.x\import
+    print("Please insert a csv file into Neo4j's import folder before continuing.")
+    csvName = input("Please insert the name of the csv file (format name.csv) or type nothing to use UserData.csv: ")
+    if not csvName:  # Empty strings are considered false boolean
+        csvName = "UserData.csv"
+        csvURL = "\"file:///UserData.csv\""  # csv is in import folder of the neo4j distribution
+    else:
+        csvURL = "\"file:///" + csvName + "\""
+
+    print("Before commit")
+    print("Nodes: " + str(len(g.nodes)))
+    print("Relations: " + str(len(g.relationships)))
+
+    # CSV Files (size: 100 and 10.000) generated with: http://www.convertcsv.com/generate-test-data.htm
+    # One must specify new loading schemes for other .csv files
+    if csvName == "UserData.csv" or csvName == "UserData2.csv":
+        csv = g.run("LOAD CSV WITH HEADERS FROM " + csvURL +
+                    " AS line CREATE (:Person "
+                    "{ name: line.name, gender: line.gender, age: toInteger(line.age), "
+                    "city: line.city, income: toFloat(line.income) })")
+    else:
+        print("There is no loading scheme specified for this csv file.")
+
+    # Begin a transaction
+    tx = g.begin()
+    # Interconnect some nodes as "Friends" or "Foes"
+    if csvName == "UserData.csv" or csvName == "UserData2.csv":
+        tx.run(
+            "MATCH (a: Person), (b: Person) WHERE a.name STARTS WITH 'A' AND b.name STARTS WITH 'B' "
+            "CREATE (a)-[r:Friends]->(b)")
+        tx.run(
+            "MATCH (a: Person), (b: Person) WHERE a.name STARTS WITH 'C' AND b.name STARTS WITH 'D' "
+            "CREATE (a)-[r:Foes]->(b)")
+
+    # Transfer changes to neo4j graph application
+    # Once a transaction has been committed or rolled back, it is marked as 'finished' and cannot be reused
+    tx.commit()
+    print("After commit")
+    print("Nodes: " + str(len(g.nodes)))
+    print("Relations: " + str(len(g.relationships)))
+
+    # Optional: Further Instructions before querying
+    furtherInstr = input("You can enter further instructions before querying, if not necessary, press enter: ")
+    if furtherInstr:
+        ty = g.begin()
+        ty.run(furtherInstr)
+        ty.commit()
+        print("After further instructions")
+        print("Nodes: " + str(len(g.nodes)))
+        print("Relations: " + str(len(g.relationships)))
+
+    # Setting DB Metadata for sensitivity calculation
+    originDBNodeCount = len(g.nodes)
+
+    # Set k-distance
+    kDistanceInput = input("Set a custom distance k for the database, press enter for k=1: ")
+    if kDistanceInput and k > originDBNodeCount:
+        print("k was set to high")
+        k = 1
+
+    # Compute Cypher Query
+    tu = g.begin()  # Do not commit, we need the result for computing sensitivity
+    userQuery = input("Please insert a Cypher Query: ")
+
+    # Compute k-distant graph, not fully dependent on the query
+    while k > 0:
+        if "Female" in userQuery:
+            tu.run("CREATE (n: Person { name: '" + names.get_full_name(gender="female") + "', age: " + str(
+                randint(20, 80)) + ", city: 'Springfield', income: " + str(round(uniform(1000.0, 9000.0), 2)) + "})")
+            tu.commit()
+        elif "Male" in userQuery:
+            tu.run("CREATE (n: Person { name: '" + names.get_full_name(gender="male") + "', age: " + str(
+                randint(20, 80)) + ", city: 'Springfield', income: " + str(round(uniform(1000.0, 9000.0), 2)) + "})")
+            tu.commit()
+        else:
+            tu.run("CREATE (n: Person { name: '" + names.get_full_name() + "', age: " + str(
+                randint(20, 80)) + ", city: 'Springfield', income: " + str(round(uniform(1000.0, 9000.0), 2)) + "})")
+            tu.commit()
+
+        k = k - 1
+
+    # Sensitivity Computation
+    choiceSensitivity = input(
+        "Do you want to compute a custom sensitivity (1), set your own (2), or use the default value (3)?: ")
+    if choiceSensitivity == "1":
+        s = 1 + originDBNodeCount / next(iter(tu.run(userQuery).data().pop().values()))
+    elif choiceSensitivity == "2":
+        s = input("Insert a sensitivity between 1 and 10: ")
+    if s > 10:
+        s = 10
+
+    if userQuery:
+        # Reduce PB
+        # querying for unique identifiers is most sensitive and should never result in feasible output, for now
+        if not "count" in userQuery:
+            print("Very sensitive")
+            pb = 0
+
+        print("Translating Cypher Query to be Epsilon-Differentially-Private")
+        # Check if query is a counting query - aggregation function and pb not exhausted
+        if "count" in userQuery and pb > 0:
+            print("Apply Sensitivity-Based Mechnism on Counting Query")
+            orig = g.begin()
+            saveOrig = next(iter(orig.run(userQuery).data().pop().values()))  # Only label for test query
+            uniform = g.begin()
+            saveUniform = next(
+                iter(uniform.run("Match(n) return rand()-0.5 limit 1").data().pop().values()))
+            countQuery = g.begin()
+            # Applying Laplacian-Noise as locally sensitive method
+            countQuerySave = next(iter(countQuery.run(
+                "Match(n) return " + str(saveOrig) + "-(" + str(s) + "/" + str(eps) + ")*sign("
+                + str(saveUniform) + ")*log(1-2*abs(" + str(saveUniform) + ")) limit 1").data().pop().values()))
+            print(countQuerySave)
+
+            pb = pb - s  # Reduce Privacy Budget
+        else:
+            print("Currently, there are no ways implemented to anonymize this kind of query.")
+    else:
+        print("No Query was inserted.")
