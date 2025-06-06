@@ -158,10 +158,6 @@ python -m pytest tests/privacy/
 - Advanced smoothing techniques
 - Real-world privacy auditing tools
 
-## 🤝 Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
 ### Areas for Contribution
 - New query types and privacy mechanisms
 - Performance optimizations
@@ -171,13 +167,6 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 ## 📄 License
 
 This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
-
-## 📞 Contact
-
-**Patrick Singh**
-- Email: [your.email@domain.com]
-- GitHub: [@yourusername]
-- Research Profile: [link to academic profile]
 
 ---
 
